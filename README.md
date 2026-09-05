@@ -31,27 +31,38 @@ There are no hardcoded question banks or canned assistant responses. Every AI re
 ## Architecture
 
 ```
-React frontend (Vite, src/)
-        │  fetch("/api/...")  — proxied in dev, same-origin in prod
-        ▼
-Secure backend (Express, server/)
-        │  @google/genai SDK  (GEMINI_API_KEY lives here)
-        ▼
-Google Gemini API
+React frontend (Vite, src/)             (Vercel)
+        │  fetch("/api/...")              Static site (dist/) + Serverless Functions
+        │  — same relative URLs on      /api/chat · /api/summarize · /api/quiz
+        │    Vercel and in local dev     · /api/generate-quiz · /api/health
+        ▼                                      │
+                                          @google/genai SDK
+                                          (GEMINI_API_KEY lives here, server-only)
+                                                 ▼
+                                          Google Gemini API
 ```
 
-- **API keys live only on the server.** The browser never sees `GEMINI_API_KEY`; the key is read from the server environment via `process.env.GEMINI_API_KEY` in `server/llm.js`.
-- `server/index.js` validates every request and maps failures (auth, rate limits, timeouts, network, invalid JSON, empty responses) to friendly messages — no secrets or stack traces reach the UI.
-- A small in-memory rate limiter protects the AI endpoints from rapid duplicate submissions (configurable via `RATE_LIMIT_MAX` / `RATE_LIMIT_WINDOW_MS`). Submit buttons are also disabled while a request is running.
-- The backend also serves the built frontend in production, so the whole app runs as a single Node process.
+- **In production the API runs as Vercel Serverless Functions** in the `api/` directory — no Express process and no `npm run dev:server` needed on Vercel.
+- The same request-handling code powers both entry points: Vercel Functions and the local Express dev server share `server/handlers.js` (→ `server/llm.js`), so behavior is identical locally and deployed.
+- **API keys live only on the server.** The browser never sees `GEMINI_API_KEY`; the key is read from the server environment via `process.env.GEMINI_API_KEY` in `server/llm.js` and configured in the Vercel dashboard.
+- Every request is validated and failures are mapped (auth, rate limits, timeouts, network, invalid JSON, empty responses) to friendly messages — no secrets or stack traces reach the UI.
+- Locally, a small in-memory rate limiter (`RATE_LIMIT_MAX` / `RATE_LIMIT_WINDOW_MS`) protects the Express AI endpoints; Vercel handles infrastructure protection in the cloud. Submit buttons are also disabled while a request is running.
 
 ## Project Structure
 
 ```
 ├── index.html
 ├── vite.config.js          # Vite config + /api dev proxy → :3001
+├── vercel.json             # Vercel build output (dist/) + SPA fallback
+├── api/                    # Vercel Serverless Functions (production API)
+│   ├── chat.js             #   POST /api/chat
+│   ├── summarize.js        #   POST /api/summarize
+│   ├── quiz.js             #   POST /api/quiz          (used by the frontend)
+│   ├── generate-quiz.js    #   POST /api/generate-quiz (alias of /api/quiz)
+│   └── health.js           #   GET  /api/health
 ├── server/
-│   ├── index.js            # Express API + rate limiting + static serving of /dist
+│   ├── index.js            # Local Express dev server (routes use shared handlers)
+│   ├── handlers.js         # Shared request handlers for Express + Vercel Functions
 │   ├── config.js           # Centralized Gemini model name
 │   ├── llm.js              # @google/genai calls, validation & error mapping
 │   └── prompts.js          # System prompts for assistant / summarizer / quiz
@@ -132,9 +143,9 @@ npm run dev
 
 Open http://localhost:5173. Vite proxies `/api/*` to the backend, so no CORS setup is needed.
 
-> Start both processes before using the AI Study Assistant, Summarizer, or Quiz Generator. If the backend is down, those tools show a friendly "could not reach the AI service" error instead of crashing.
+> Start both processes before using the AI Study Assistant, Summarizer, or Quiz Generator. If the backend is down, those tools show a friendly "could not reach the AI service" error instead of crashing. The same AI endpoints work on Vercel without the Express server — see *Deploying to Vercel* below.
 
-### Production (single process)
+### Production (self-hosted single process)
 
 ```bash
 npm install
@@ -143,6 +154,20 @@ npm start           # Express serves /dist + the /api endpoints
 ```
 
 Open http://localhost:3001.
+
+### Deploying to Vercel (recommended)
+
+The production deployment runs the API as **Vercel Serverless Functions** located in `api/`. `npm run dev:server` is **not** required (or running) on Vercel.
+
+1. Push the repository to GitHub (or use `vercel` CLI / Vercel Git integration).
+2. **Import the project** in [vercel.new](https://vercel.new). Vercel detects the Vite framework automatically and uses the settings in `vercel.json` (`npm run build`, output `dist/`).
+3. **Add environment variables** (Project → Settings → Environment Variables):
+   - `GEMINI_API_KEY` — your Google Gemini API key (required).
+   - `GEMINI_MODEL` — default `gemini-3.5-flash-lite` (optional).
+   - `GEMINI_BASE_URL` — default is Google's endpoint (optional, only if you proxy).
+4. **Deploy.** The static frontend is served from `dist/`, and `/api/*` requests hit the Serverless Functions (`/api/chat`, `/api/summarize`, `/api/quiz`, `/api/generate-quiz`, `/api/health`). The SPA fallback in `vercel.json` keeps client-side routes working after refresh.
+
+> To test the exact Serverless Functions locally before pushing, run `npx vercel dev` at the project root (loads `.env` automatically and serves `api/` exactly like Vercel). The regular `npm run dev` + `npm run dev:server` flow continues to work unchanged.
 
 ### Health check
 
