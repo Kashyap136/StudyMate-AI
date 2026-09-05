@@ -91,9 +91,6 @@ export default function Home() {
     <div>
       {/* Hero */}
       <section className="relative overflow-hidden">
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-primary-50 via-white to-accent-50 dark:via-slate-950 dark:to-slate-950" />
-        <div className="pointer-events-none absolute -top-32 right-0 h-96 w-96 rounded-full bg-primary-200/40 blur-3xl" />
-        <div className="pointer-events-none absolute -bottom-32 -left-20 h-96 w-96 rounded-full bg-accent-200/40 blur-3xl" />
 
         <div className="relative mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
           <div className="grid items-center gap-14 lg:grid-cols-2">
